@@ -1,5 +1,0 @@
-﻿jdk:
-  - openjdk8
-
-build:
-  - gradle build publishToMavenLocal
