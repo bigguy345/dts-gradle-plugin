@@ -39,8 +39,20 @@ gradlePlugin {
 }
 
 publishing {
+    publications {
+        // The groovy-gradle-plugin auto-generates the 'pluginMaven' publication
+        // We need to explicitly include it or define our own
+    }
     repositories {
         mavenLocal()
+    }
+}
+
+// Ensure the plugin marker is generated and published
+afterEvaluate {
+    publishing.publications.all { publication ->
+        publication.groupId = 'dts'
+        publication.version = '1.0.0'
     }
 }
 
