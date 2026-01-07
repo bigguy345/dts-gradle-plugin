@@ -927,23 +927,39 @@ class JavaToTypeScriptConverter {
     
     /**
      * Collect hook information from event interfaces
+     * Looks for interfaces that:
+     * 1. End with 'Event' (e.g., IPlayerEvent, IDBCEvent)
+     * 2. Are in an 'event' package
+     * 3. Have nested types that are also events
      */
     private void collectHooks(ParsedJavaFile parsed) {
+        boolean isEventPackage = parsed.packageName.contains('.event')
+        
         parsed.types.each { type ->
-            // Event interfaces typically end with 'Event'
-            if (type.name.endsWith('Event') && type.isInterface) {
+            // Check if this is an event interface:
+            // - Must be an interface
+            // - Either ends with 'Event' OR is in an event package
+            boolean isEventType = type.isInterface && (
+                type.name.endsWith('Event') || type.name.endsWith('Events')||
+                isEventPackage
+            )
+            
+            if (isEventType && !type.nestedTypes.isEmpty()) {
                 type.nestedTypes.each { nested ->
-                    // Create hook entry
-                    String hookName = deriveHookName(nested.name)
-                    if (!hooks.containsKey(hookName)) {
-                        hooks[hookName] = []
+                    // Only process nested types that are interfaces and look like events
+                    if (nested.isInterface && (nested.name.endsWith('Event')|| nested.name.endsWith('Events') || isEventPackage)) {
+                        // Create hook entry
+                        String hookName = deriveHookName(nested.name)
+                        if (!hooks.containsKey(hookName)) {
+                            hooks[hookName] = []
+                        }
+                        hooks[hookName] << new HookInfo(
+                            eventType: type.name,
+                            subEvent: nested.name,
+                            fullType: "${type.name}.${nested.name}",
+                            packageName: parsed.packageName
+                        )
                     }
-                    hooks[hookName] << new HookInfo(
-                        eventType: type.name,
-                        subEvent: nested.name,
-                        fullType: "${type.name}.${nested.name}",
-                        packageName: parsed.packageName
-                    )
                 }
             }
         }
