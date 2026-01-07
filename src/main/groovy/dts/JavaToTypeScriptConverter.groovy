@@ -549,8 +549,8 @@ class JavaToTypeScriptConverter {
             sb.append("<${convertTypeParams(type.typeParams)}>")
         }
         
-        // Extends
-        if (type.extendsType) {
+        // Extends - skip if extending itself
+        if (type.extendsType && type.extendsType != type.name) {
             sb.append(" extends ${convertType(type.extendsType, parsed, currentPath)}")
         }
         
@@ -601,8 +601,8 @@ class JavaToTypeScriptConverter {
             sb.append("<${convertTypeParams(type.typeParams)}>")
         }
         
-        // Extends - handle parent type reference specially
-        if (type.extendsType) {
+        // Extends - handle parent type reference specially, skip if extending itself
+        if (type.extendsType && type.extendsType != type.name) {
             String extendsRef = convertTypeForNested(type.extendsType, parentTypeName, parsed, currentPath)
             sb.append(" extends ${extendsRef}")
         }
