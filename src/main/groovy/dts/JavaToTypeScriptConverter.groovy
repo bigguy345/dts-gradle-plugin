@@ -572,19 +572,9 @@ class JavaToTypeScriptConverter {
         if (!type.nestedTypes.isEmpty()) {
             sb.append("\n${indent}export namespace ${type.name} {\n")
             type.nestedTypes.each { nested ->
-                // Check if it is an empty interface that extends parent (no methods AND no nested types)
-                if (nested.methods.isEmpty() && nested.nestedTypes.isEmpty() && nested.extendsType) {
-                    // Use type alias
-                    if (nested.jsdoc) {
-                        sb.append(convertJsDoc(nested.jsdoc, indent + '    '))
-                        sb.append('\n')
-                    }
-                    // For nested types extending the parent, use local reference
-                    String extendsRef = convertTypeForNested(nested.extendsType, type.name, parsed, currentPath)
-                    sb.append("${indent}    export type ${nested.name} = ${extendsRef}\n")
-                } else {
-                    generateNestedType(sb, nested, type.name, parsed, currentPath, indent + '    ')
-                }
+                // Always generate as interface, even if empty
+                // Empty interfaces with extends are important for type hierarchy
+                generateNestedType(sb, nested, type.name, parsed, currentPath, indent + '    ')
             }
             sb.append("${indent}}\n")
         }
@@ -630,20 +620,9 @@ class JavaToTypeScriptConverter {
         if (!type.nestedTypes.isEmpty()) {
             sb.append("${indent}export namespace ${type.name} {\n")
             type.nestedTypes.each { nested ->
-                // Check if it is an empty interface that extends its parent
-                if (nested.methods.isEmpty() && nested.nestedTypes.isEmpty() && nested.extendsType) {
-                    // Use type alias
-                    if (nested.jsdoc) {
-                        sb.append(convertJsDoc(nested.jsdoc, indent + '    '))
-                        sb.append('\n')
-                    }
-                    // For nested types extending the parent, use local reference
-                    String extendsRef = convertTypeForNested(nested.extendsType, type.name, parsed, currentPath)
-                    sb.append("${indent}    export type ${nested.name} = ${extendsRef}\n")
-                } else {
-                    // Recursively generate the nested type
-                    generateNestedType(sb, nested, type.name, parsed, currentPath, indent + '    ')
-                }
+                // Always generate as interface, even if empty
+                // Empty interfaces with extends are important for type hierarchy
+                generateNestedType(sb, nested, type.name, parsed, currentPath, indent + '    ')
             }
             sb.append("${indent}}\n")
         }
