@@ -187,22 +187,70 @@ class JavaToTypeScriptConverter {
     private void parseTypes(String content, ParsedJavaFile result) {
         // Match ONLY top-level (public) interface or class declarations
         // Top-level types MUST have 'public' modifier in Java
-        // Capture JSDoc in group 1, abstract in group 2, interface/class in group 3, name in group 4, etc.
-        def typePattern = ~/(\/\*\*[\s\S]*?\*\/\s*)?public\s+(abstract\s+)?(interface|class)\s+(\w+)(?:<([^>]+)>)?(?:\s+extends\s+([\w.<>,\s]+))?(?:\s+implements\s+([\w.<>,\s]+))?\s*\{/
+        // Use a simpler pattern first, then manually extract type parameters
+        // Handle modifiers like abstract, final, static (in any order)
+        def typePattern = ~/(\/\*\*[\s\S]*?\*\/\s*)?public\s+(?:(?:abstract|final|static)\s+)*(interface|class)\s+(\w+)/
         
         def matcher = content =~ typePattern
         while (matcher.find()) {
             JavaType type = new JavaType()
             type.jsdoc = matcher.group(1)?.trim()
-            type.isInterface = matcher.group(3) == 'interface'
-            type.isClass = matcher.group(3) == 'class'
-            type.name = matcher.group(4)
-            type.typeParams = matcher.group(5)
-            type.extendsType = matcher.group(6)?.trim()
-            type.implementsTypes = matcher.group(7)?.split(',')?.collect { it.trim() } ?: []
+            type.isInterface = matcher.group(2) == 'interface'
+            type.isClass = matcher.group(2) == 'class'
+            type.name = matcher.group(3)
+            
+            // Manually extract type parameters with balanced bracket matching
+            int afterName = matcher.end()
+            String remainder = content.substring(afterName)
+            
+            // Check if there are type parameters
+            if (remainder.trim().startsWith('<')) {
+                int startIndex = remainder.indexOf('<')
+                int depth = 0
+                int endIndex = -1
+                
+                for (int i = startIndex; i < remainder.length(); i++) {
+                    char c = remainder.charAt(i)
+                    if (c == '<') {
+                        depth++
+                    } else if (c == '>') {
+                        depth--
+                        if (depth == 0) {
+                            endIndex = i
+                            break
+                        }
+                    }
+                }
+                
+                if (endIndex > startIndex) {
+                    type.typeParams = remainder.substring(startIndex + 1, endIndex).trim()
+                    remainder = remainder.substring(endIndex + 1)
+                }
+            }
+            
+            // Now parse extends and implements
+            def extendsPattern = ~/\s+extends\s+([\w.<>,\s]+?)(?:\s+implements|\s*\{)/
+            def extendsMatcher = remainder =~ extendsPattern
+            if (extendsMatcher.find()) {
+                type.extendsType = extendsMatcher.group(1)?.trim()
+            }
+            
+            def implementsPattern = ~/\s+implements\s+([\w.<>,\s]+?)\s*\{/
+            def implementsMatcher = remainder =~ implementsPattern
+            if (implementsMatcher.find()) {
+                type.implementsTypes = implementsMatcher.group(1)?.split(',')?.collect { it.trim() } ?: []
+            } else {
+                type.implementsTypes = []
+            }
+            
+            // Find the opening brace for the body
+            int braceIndex = content.indexOf('{', afterName)
+            if (braceIndex == -1) {
+                continue // No body found, skip this type
+            }
             
             // Find the body of this type
-            int bodyStart = matcher.end() - 1
+            int bodyStart = braceIndex
             int bodyEnd = findMatchingBrace(content, bodyStart)
             if (bodyEnd > bodyStart) {
                 String body = content.substring(bodyStart + 1, bodyEnd)
