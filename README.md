@@ -47,8 +47,6 @@ plugins {
 // ============================================================================
 // TypeScript plugin is applied above in the main plugins block
 
-import dts.GenerateTypeScriptTask
-
 tasks.named("generateTypeScriptDefinitions").configure {
     // Source directories containing the Java API code
     sourceDirectories = ['src/main/java']
