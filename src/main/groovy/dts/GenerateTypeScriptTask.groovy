@@ -79,7 +79,7 @@ abstract class GenerateTypeScriptTask extends DefaultTask {
     // conversion logic inlined into getters to avoid calling private helper at configuration time
     
     GenerateTypeScriptTask() {
-        group = 'build'
+        group = 'api'
         description = 'Generates TypeScript definition files from Java API sources'
     }
     
