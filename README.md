@@ -55,7 +55,7 @@ tasks.named("generateTypeScriptDefinitions").configure {
     apiPackages = ['noppes.npcs.api'] as Set
 
     // Output directory for the generated .d.ts files
-    // Must be within resources/modid/api to be read by CNPC+
+    // Must be within resources/${modId}/api to be read by CNPC+
     outputDirectory = "src/main/resources/${modId}/api"
     
     // Whether to clean old generated files before regenerating
