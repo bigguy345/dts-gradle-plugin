@@ -224,6 +224,8 @@ class JavaToTypeScriptConverter {
                 
                 if (endIndex > startIndex) {
                     type.typeParams = remainder.substring(startIndex + 1, endIndex).trim()
+                    // Parse type parameters with full class names
+                    type.parsedTypeParams = parseTypeParams(type.typeParams, result)
                     remainder = remainder.substring(endIndex + 1)
                 }
             }
@@ -534,6 +536,9 @@ class JavaToTypeScriptConverter {
     }
     
     private void generateType(StringBuilder sb, JavaType type, ParsedJavaFile parsed, String currentPath, String indent) {
+        // Build a set of type parameter names for this type (e.g., "T", "U", etc.)
+        Set<String> typeParamNames = type.parsedTypeParams?.collect { it.name }?.toSet() ?: [] as Set
+        
         // JSDoc
         if (type.jsdoc) {
             sb.append(convertJsDoc(type.jsdoc, indent))
@@ -544,26 +549,26 @@ class JavaToTypeScriptConverter {
         String keyword = type.isClass ? 'export class' : 'export interface'
         sb.append("${indent}${keyword} ${type.name}")
         
-        // Type parameters
+        // Type parameters with full class name bounds in JSDoc comment
         if (type.typeParams) {
-            sb.append("<${convertTypeParams(type.typeParams)}>")
+            sb.append("<${convertTypeParams(type.typeParams, type.parsedTypeParams)}>")
         }
         
         // Extends - skip if extending itself
         if (type.extendsType && type.extendsType != type.name) {
-            sb.append(" extends ${convertType(type.extendsType, parsed, currentPath)}")
+            sb.append(" extends ${convertType(type.extendsType, parsed, currentPath, typeParamNames)}")
         }
         
         sb.append(' {\n')
         
         // Methods - compact format, no comments
         type.methods.each { method ->
-            generateMethod(sb, method, parsed, currentPath, indent + '    ')
+            generateMethod(sb, method, parsed, currentPath, indent + '    ', typeParamNames)
         }
         
         // Fields (for classes)
         type.fields.each { field ->
-            generateField(sb, field, parsed, currentPath, indent + '    ')
+            generateField(sb, field, parsed, currentPath, indent + '    ', typeParamNames)
         }
         
         sb.append("${indent}}\n")
@@ -586,6 +591,9 @@ class JavaToTypeScriptConverter {
      * Recursively handles nested types that themselves have nested types
      */
     private void generateNestedType(StringBuilder sb, JavaType type, String parentTypeName, ParsedJavaFile parsed, String currentPath, String indent) {
+        // Build a set of type parameter names for this nested type
+        Set<String> typeParamNames = type.parsedTypeParams?.collect { it.name }?.toSet() ?: [] as Set
+        
         // JSDoc
         if (type.jsdoc) {
             sb.append(convertJsDoc(type.jsdoc, indent))
@@ -596,14 +604,14 @@ class JavaToTypeScriptConverter {
         String keyword = type.isClass ? 'export class' : 'export interface'
         sb.append("${indent}${keyword} ${type.name}")
         
-        // Type parameters
+        // Type parameters with full class name bounds
         if (type.typeParams) {
-            sb.append("<${convertTypeParams(type.typeParams)}>")
+            sb.append("<${convertTypeParams(type.typeParams, type.parsedTypeParams)}>")
         }
         
         // Extends - handle parent type reference specially, skip if extending itself
         if (type.extendsType && type.extendsType != type.name) {
-            String extendsRef = convertTypeForNested(type.extendsType, parentTypeName, parsed, currentPath)
+            String extendsRef = convertTypeForNested(type.extendsType, parentTypeName, parsed, currentPath, typeParamNames)
             sb.append(" extends ${extendsRef}")
         }
         
@@ -611,7 +619,7 @@ class JavaToTypeScriptConverter {
         
         // Methods - compact format, no comments
         type.methods.each { method ->
-            generateMethod(sb, method, parsed, currentPath, indent + '    ')
+            generateMethod(sb, method, parsed, currentPath, indent + '    ', typeParamNames)
         }
         
         sb.append("${indent}}\n")
@@ -631,7 +639,7 @@ class JavaToTypeScriptConverter {
     /**
      * Convert type reference for nested types - handle parent type specially
      */
-    private String convertTypeForNested(String javaType, String parentTypeName, ParsedJavaFile parsed, String currentPath) {
+    private String convertTypeForNested(String javaType, String parentTypeName, ParsedJavaFile parsed, String currentPath, Set<String> typeParamNames) {
         if (javaType == null || javaType.isEmpty()) return 'any'
         
         javaType = javaType.trim()
@@ -642,10 +650,10 @@ class JavaToTypeScriptConverter {
         }
         
         // Otherwise use normal conversion
-        return convertType(javaType, parsed, currentPath)
+        return convertType(javaType, parsed, currentPath, typeParamNames)
     }
     
-    private void generateMethod(StringBuilder sb, JavaMethod method, ParsedJavaFile parsed, String currentPath, String indent) {
+    private void generateMethod(StringBuilder sb, JavaMethod method, ParsedJavaFile parsed, String currentPath, String indent, Set<String> typeParamNames) {
         // JSDoc
         if (method.jsdoc) {
             sb.append(convertJsDoc(method.jsdoc, indent))
@@ -656,7 +664,7 @@ class JavaToTypeScriptConverter {
         
         // Parameters
         List<String> paramStrs = method.parameters.collect { param ->
-            String tsType = convertType(param.type, parsed, currentPath)
+            String tsType = convertType(param.type, parsed, currentPath, typeParamNames)
             if (param.isVarargs) {
                 return "...${param.name}: ${tsType}"
             }
@@ -665,25 +673,31 @@ class JavaToTypeScriptConverter {
         sb.append(paramStrs.join(', '))
         
         sb.append('): ')
-        sb.append(convertType(method.returnType, parsed, currentPath))
+        sb.append(convertType(method.returnType, parsed, currentPath, typeParamNames))
         sb.append(';\n')
     }
     
-    private void generateField(StringBuilder sb, JavaField field, ParsedJavaFile parsed, String currentPath, String indent) {
+    private void generateField(StringBuilder sb, JavaField field, ParsedJavaFile parsed, String currentPath, String indent, Set<String> typeParamNames) {
         if (field.jsdoc) {
             sb.append(convertJsDoc(field.jsdoc, indent))
             sb.append('\n')
         }
-        sb.append("${indent}${field.name}: ${convertType(field.type, parsed, currentPath)};\n")
+        sb.append("${indent}${field.name}: ${convertType(field.type, parsed, currentPath, typeParamNames)};\n")
     }
     
     /**
      * Convert Java type to TypeScript type
+     * @param typeParamNames Set of type parameter names from the enclosing type (e.g., "T", "U")
      */
-    String convertType(String javaType, ParsedJavaFile parsed, String currentPath) {
+    String convertType(String javaType, ParsedJavaFile parsed, String currentPath, Set<String> typeParamNames = [] as Set) {
         if (javaType == null || javaType.isEmpty()) return 'any'
         
         javaType = javaType.trim()
+        
+        // Check if it's a type parameter (like T, U, etc.)
+        if (typeParamNames.contains(javaType)) {
+            return javaType
+        }
         
         // Check primitives first
         if (PRIMITIVE_MAPPINGS.containsKey(javaType)) {
@@ -693,12 +707,12 @@ class JavaToTypeScriptConverter {
         // Handle arrays
         if (javaType.endsWith('[]') && javaType.length() > 2) {
             String baseType = javaType.substring(0, javaType.length() - 2)
-            return convertType(baseType, parsed, currentPath) + '[]'
+            return convertType(baseType, parsed, currentPath, typeParamNames) + '[]'
         }
         
         // Handle generics
         if (javaType.contains('<')) {
-            return convertGenericType(javaType, parsed, currentPath)
+            return convertGenericType(javaType, parsed, currentPath, typeParamNames)
         }
         
         // Handle functional interfaces from java.util.function
@@ -722,7 +736,7 @@ class JavaToTypeScriptConverter {
         return javaType
     }
     
-    private String convertGenericType(String type, ParsedJavaFile parsed, String currentPath) {
+    private String convertGenericType(String type, ParsedJavaFile parsed, String currentPath, Set<String> typeParamNames = [] as Set) {
         int ltIndex = type.indexOf('<')
         int gtIndex = type.lastIndexOf('>')
         if (ltIndex == -1 || gtIndex == -1 || ltIndex >= gtIndex) {
@@ -741,58 +755,58 @@ class JavaToTypeScriptConverter {
             case 'Set':
             case 'HashSet':
             case 'Queue':
-                return convertType(genericPart, parsed, currentPath) + '[]'
+                return convertType(genericPart, parsed, currentPath, typeParamNames) + '[]'
             
             case 'Map':
             case 'HashMap':
             case 'LinkedHashMap':
                 List<String> parts = splitGenericParams(genericPart)
                 if (parts.size() >= 2) {
-                    String keyType = convertType(parts[0], parsed, currentPath)
-                    String valueType = convertType(parts[1], parsed, currentPath)
+                    String keyType = convertType(parts[0], parsed, currentPath, typeParamNames)
+                    String valueType = convertType(parts[1], parsed, currentPath, typeParamNames)
                     return "Record<${keyType}, ${valueType}>"
                 }
                 return 'Record<any, any>'
             
             case 'Optional':
-                return convertType(genericPart, parsed, currentPath) + ' | null'
+                return convertType(genericPart, parsed, currentPath, typeParamNames) + ' | null'
             
             // Functional interfaces
             case 'Consumer':
-                return "(arg: ${convertType(genericPart, parsed, currentPath)}) => void"
+                return "(arg: ${convertType(genericPart, parsed, currentPath, typeParamNames)}) => void"
             
             case 'Supplier':
-                return "() => ${convertType(genericPart, parsed, currentPath)}"
+                return "() => ${convertType(genericPart, parsed, currentPath, typeParamNames)}"
             
             case 'Function':
                 List<String> funcParts = splitGenericParams(genericPart)
                 if (funcParts.size() >= 2) {
-                    return "(arg: ${convertType(funcParts[0], parsed, currentPath)}) => ${convertType(funcParts[1], parsed, currentPath)}"
+                    return "(arg: ${convertType(funcParts[0], parsed, currentPath, typeParamNames)}) => ${convertType(funcParts[1], parsed, currentPath, typeParamNames)}"
                 }
                 return '(arg: any) => any'
             
             case 'Predicate':
-                return "(arg: ${convertType(genericPart, parsed, currentPath)}) => boolean"
+                return "(arg: ${convertType(genericPart, parsed, currentPath, typeParamNames)}) => boolean"
             
             case 'BiConsumer':
                 List<String> biParts = splitGenericParams(genericPart)
                 if (biParts.size() >= 2) {
-                    return "(arg1: ${convertType(biParts[0], parsed, currentPath)}, arg2: ${convertType(biParts[1], parsed, currentPath)}) => void"
+                    return "(arg1: ${convertType(biParts[0], parsed, currentPath, typeParamNames)}, arg2: ${convertType(biParts[1], parsed, currentPath, typeParamNames)}) => void"
                 }
                 return '(arg1: any, arg2: any) => void'
             
             case 'BiFunction':
                 List<String> biFuncParts = splitGenericParams(genericPart)
                 if (biFuncParts.size() >= 3) {
-                    return "(arg1: ${convertType(biFuncParts[0], parsed, currentPath)}, arg2: ${convertType(biFuncParts[1], parsed, currentPath)}) => ${convertType(biFuncParts[2], parsed, currentPath)}"
+                    return "(arg1: ${convertType(biFuncParts[0], parsed, currentPath, typeParamNames)}, arg2: ${convertType(biFuncParts[1], parsed, currentPath, typeParamNames)}) => ${convertType(biFuncParts[2], parsed, currentPath, typeParamNames)}"
                 }
                 return '(arg1: any, arg2: any) => any'
             
             default:
                 // Regular generic type
-                String convertedBase = convertType(baseType, parsed, currentPath)
+                String convertedBase = convertType(baseType, parsed, currentPath, typeParamNames)
                 List<String> convertedParams = splitGenericParams(genericPart).collect { 
-                    convertType(it, parsed, currentPath) 
+                    convertType(it, parsed, currentPath, typeParamNames) 
                 }
                 // For import types, we cannot add generics easily, so simplify
                 if (convertedBase.startsWith('import(')) {
@@ -825,10 +839,35 @@ class JavaToTypeScriptConverter {
         return result
     }
     
-    private String convertTypeParams(String typeParams) {
-        // Convert Java type parameters to TypeScript
-        // e.g., "T extends Comparable<T>" -> "T extends Comparable<T>"
-        return typeParams
+    /**
+     * Convert Java type parameters to TypeScript
+     * Outputs format like: T extends EntityPlayerMP /`*` net.minecraft.entity.player.EntityPlayerMP `*`/
+     * This allows runtime parsing to extract the full Java class name for the type bound.
+     */
+    private String convertTypeParams(String typeParams, List<TypeParamInfo> parsedParams) {
+        if (typeParams == null || typeParams.isEmpty()) return typeParams
+        if (parsedParams == null || parsedParams.isEmpty()) return typeParams
+        
+        // Build result by iterating over parsed params
+        List<String> convertedParams = []
+        for (TypeParamInfo info in parsedParams) {
+            StringBuilder sb = new StringBuilder()
+            sb.append(info.name)
+            
+            if (info.boundType != null) {
+                sb.append(" extends ")
+                sb.append(info.boundType)
+                
+                // Add full class name as JSDoc-style comment if available
+                if (info.fullBoundType != null) {
+                    sb.append(" /* ${info.fullBoundType} */")
+                }
+            }
+            
+            convertedParams << sb.toString()
+        }
+        
+        return convertedParams.join(', ')
     }
     
     private String resolveImportPath(String typeName, ParsedJavaFile parsed, String currentPath) {
@@ -864,6 +903,46 @@ class JavaToTypeScriptConverter {
         
         // Same package
         return "${parsed.packageName}.${typeName}"
+    }
+    
+    /**
+     * Parse type parameters like "T extends EntityPlayerMP" into structured TypeParamInfo
+     * with full class names resolved from imports
+     */
+    private List<TypeParamInfo> parseTypeParams(String typeParams, ParsedJavaFile parsed) {
+        List<TypeParamInfo> result = []
+        if (typeParams == null || typeParams.isEmpty()) return result
+        
+        // Split by comma, but respect nested angle brackets
+        List<String> params = splitGenericParams(typeParams)
+        
+        for (String param in params) {
+            param = param.trim()
+            TypeParamInfo info = new TypeParamInfo()
+            
+            // Check for "T extends BoundType" pattern
+            def extendsMatcher = param =~ /(\w+)\s+extends\s+(.+)/
+            if (extendsMatcher.find()) {
+                info.name = extendsMatcher.group(1).trim()
+                String boundType = extendsMatcher.group(2).trim()
+                
+                // Handle generic bounds like "Comparable<T>" - extract base type
+                int angleIndex = boundType.indexOf('<')
+                String baseBoundType = angleIndex > 0 ? boundType.substring(0, angleIndex) : boundType
+                
+                info.boundType = baseBoundType
+                info.fullBoundType = resolveFullType(baseBoundType, parsed)
+            } else {
+                // Just a type param like "T" with no explicit bound
+                info.name = param
+                info.boundType = null
+                info.fullBoundType = null
+            }
+            
+            result << info
+        }
+        
+        return result
     }
     
     private String calculateRelativePath(String fromPath, String toPath) {
@@ -1088,7 +1167,8 @@ class JavaToTypeScriptConverter {
     
     static class JavaType {
         String name
-        String typeParams
+        String typeParams                          // Raw string like "T extends EntityPlayerMP"
+        List<TypeParamInfo> parsedTypeParams = []  // Parsed type parameters with full class names
         String extendsType
         List<String> implementsTypes = []
         boolean isInterface
@@ -1116,6 +1196,12 @@ class JavaToTypeScriptConverter {
         String name
         String type
         String jsdoc
+    }
+    
+    static class TypeParamInfo {
+        String name          // e.g., "T"
+        String boundType     // e.g., "EntityPlayerMP" 
+        String fullBoundType // e.g., "net.minecraft.entity.player.EntityPlayerMP"
     }
     
     static class TypeInfo {
