@@ -1000,6 +1000,35 @@ class JavaToTypeScriptConverter {
             }
         }
         
+        // Collect all parent types that have nested types (for namespace declarations)
+        Map<String, List<TypeInfo>> parentToNested = [:]
+        generatedTypes.each { type ->
+            if (type.parentType) {
+                if (!parentToNested.containsKey(type.parentType)) {
+                    parentToNested[type.parentType] = []
+                }
+                parentToNested[type.parentType] << type
+            }
+        }
+        
+        // Generate namespace declarations for types with nested interfaces
+        if (!parentToNested.isEmpty()) {
+            sb.append('\n    // ============================================================================\n')
+            sb.append('    // NESTED INTERFACES - Allow autocomplete like INpcEvent.InitEvent\n')
+            sb.append('    // ============================================================================\n\n')
+            
+            parentToNested.sort { a, b -> a.key <=> b.key }.each { parentName, nestedTypes ->
+                sb.append("    namespace ${parentName} {\n")
+                nestedTypes.sort { a, b -> a.name <=> b.name }.each { nested ->
+                    // Extract just the nested type name (e.g., "InitEvent" from "IPlayerEvent.InitEvent")
+                    String nestedName = nested.name.contains('.') ? 
+                        nested.name.substring(nested.name.lastIndexOf('.') + 1) : nested.name
+                    sb.append("        interface ${nestedName} extends ${parentName} {}\n")
+                }
+                sb.append("    }\n\n")
+            }
+        }
+        
         sb.append('}\n\n')
         sb.append('export {};\n')
         
