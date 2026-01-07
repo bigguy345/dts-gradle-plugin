@@ -7,32 +7,65 @@ in the Script Editor in-game.
 
 ### Implementation using JitPack
 
-Add JitPack to the buildscript and depend on the plugin JAR. Using `master-SNAPSHOT` will build the latest `main` commit;
+Add JitPack to the buildscript and depend on the plugin JAR. Using `main-SNAPSHOT` will build the latest `main` commit;
 for reproducible builds use a tag or commit hash instead.
 
-`build.gradle` (consumer):
+`settings.gradle`
+```gradle
+pluginManagement {
+    resolutionStrategy {
+        eachPlugin {
+            if(requested.id.toString() == "dts.typescript-generator") {
+                useModule("com.github.bigguy345:dts-gradle-plugin:main-SNAPSHOT")
+            }
+        }
+    }
+
+    
+    repositories {
+        maven { url "https://jitpack.io" }
+        gradlePluginPortal()
+        mavenCentral()
+        mavenLocal()
+    }
+}
+```
+
+
+
+
+`build.gradle`:
 
 ```gradle
-buildscript {
-  repositories {
-    maven { url 'https://jitpack.io' }
-    mavenLocal()
-    mavenCentral()
-  }
-  dependencies {
-    // Use a tag or commit for reproducibility.
-    classpath 'com.github.bigguy345:dts-gradle-plugin:master-SNAPSHOT'
-  }
+plugins {
+    id 'dts.typescript-generator'
 }
+
+// ============================================================================
+// TypeScript Definition Generation Task
+// Generates .d.ts files from Java API sources for scripting IDE support
+// ============================================================================
+// TypeScript plugin is applied above in the main plugins block
 
 import dts.GenerateTypeScriptTask
 
-task generateTypeScriptDefinitions(type: GenerateTypeScriptTask) {
-  sourceDirectories = [file('src/api/java')]
-  outputDirectory = file('src/main/resources/assets/customnpcs/api')
-  apiPackages = ['noppes.npcs.api'] as Set
-  cleanOutputFirst = true
+tasks.named("generateTypeScriptDefinitions").configure {
+    // Source directories containing the Java API code
+    sourceDirectories = ['src/main/java']
+    
+    // Packages in source directories to generate .d.ts files for
+    apiPackages = ['noppes.npcs.api'] as Set
+
+    // Output directory for the generated .d.ts files
+    // Must be within resources/modid/api to be read by CNPC+
+    outputDirectory = "src/main/resources/${modId}/api"
+    
+    // Whether to clean old generated files before regenerating
+    cleanOutputFirst = true 
 }
 
-processResources.dependsOn generateTypeScriptDefinitions
+
+// Optional: To ensure definitions are generated on processing resources on jar build
+// But in most cases, you may want to run the task manually when needed
+// processResources.dependsOn generateTypeScriptDefinitions
 ```
