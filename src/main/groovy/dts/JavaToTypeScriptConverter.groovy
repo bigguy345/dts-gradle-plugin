@@ -1,6 +1,8 @@
 package dts
 
 import groovy.transform.TypeChecked
+import org.gradle.api.logging.Logger
+
 import java.util.regex.Pattern
 import java.util.regex.Matcher
 
@@ -58,6 +60,8 @@ class JavaToTypeScriptConverter {
     // Track hooks for hooks.d.ts
     private Map<String, List<HookInfo>> hooks = [:]
     
+    private Logger logger;
+    
     JavaToTypeScriptConverter(File outputDir, Set<String> apiPackages) {
         this.outputDir = outputDir
         this.apiPackages = apiPackages
@@ -66,7 +70,8 @@ class JavaToTypeScriptConverter {
     /**
      * Process all Java files in the given directories
      */
-    void processDirectories(List<File> sourceDirs) {
+    void processDirectories(List<File> sourceDirs, Logger logger) {
+        this.logger = logger
         sourceDirs.each { dir ->
             if (dir.exists()) {
                 processDirectory(dir, dir)
@@ -83,11 +88,21 @@ class JavaToTypeScriptConverter {
     private void processDirectory(File dir, File baseDir) {
         dir.eachFileRecurse { file ->
             if (file.name.endsWith('.java') && !file.name.equals('package-info.java')) {
-                processJavaFile(file, baseDir)
+                // Early filtering - check if file matches any API package
+                String relativePath = baseDir.toPath().relativize(file.toPath()).toString()
+                String packagePath = relativePath.replace('\\', '/').replace('.java', '').replace('/', '.')
+                
+                // Only process if the package starts with one of the apiPackages
+                boolean shouldProcess = apiPackages.any { apiPkg -> packagePath.startsWith(apiPkg) }
+                
+                if (shouldProcess) 
+                    processJavaFile(file, baseDir)
             }
         }
     }
+
     
+
     /**
      * Process a single Java file
      */
@@ -374,12 +389,15 @@ class JavaToTypeScriptConverter {
             
             // Split type and name
             int lastSpace = part.lastIndexOf(' ')
-            if (lastSpace > 0) {
+            if (lastSpace > 0 && lastSpace < part.length() - 1) {
                 JavaParameter param = new JavaParameter()
                 param.type = part.substring(0, lastSpace).trim()
                 param.name = part.substring(lastSpace + 1).trim()
                 param.isVarargs = isVarargs
                 params << param
+            } else if (lastSpace == -1 && !part.isEmpty()) {
+                // No space found - might be a single token, skip it
+                // This can happen with malformed or unusual parameter declarations
             }
         }
         
@@ -638,7 +656,7 @@ class JavaToTypeScriptConverter {
         }
         
         // Handle arrays
-        if (javaType.endsWith('[]')) {
+        if (javaType.endsWith('[]') && javaType.length() > 2) {
             String baseType = javaType.substring(0, javaType.length() - 2)
             return convertType(baseType, parsed, currentPath) + '[]'
         }
@@ -671,8 +689,13 @@ class JavaToTypeScriptConverter {
     
     private String convertGenericType(String type, ParsedJavaFile parsed, String currentPath) {
         int ltIndex = type.indexOf('<')
+        int gtIndex = type.lastIndexOf('>')
+        if (ltIndex == -1 || gtIndex == -1 || ltIndex >= gtIndex) {
+            // Malformed generic, return as-is
+            return type
+        }
         String baseType = type.substring(0, ltIndex).trim()
-        String genericPart = type.substring(ltIndex + 1, type.lastIndexOf('>')).trim()
+        String genericPart = type.substring(ltIndex + 1, gtIndex).trim()
         
         // Handle common collections
         switch (baseType) {
@@ -780,7 +803,9 @@ class JavaToTypeScriptConverter {
         if (fullType == null) return null
         
         // Check if it is an API type
-        String packagePrefix = fullType.substring(0, fullType.lastIndexOf('.'))
+        int lastDotIndex = fullType.lastIndexOf('.')
+        if (lastDotIndex == -1) return null
+        String packagePrefix = fullType.substring(0, lastDotIndex)
         if (apiPackages.any { fullType.startsWith(it) }) {
             // Calculate relative path
             String typeFilePath = fullType.replace('.', '/') + '.d.ts'
@@ -893,11 +918,12 @@ class JavaToTypeScriptConverter {
         // Convert event names to hook function names
         // e.g., "InitEvent" -> "init", "DamagedEvent" -> "damaged"
         String name = eventName
-        if (name.endsWith('Event')) {
+        if (name.endsWith('Event') && name.length() > 5) {
             name = name.substring(0, name.length() - 5)
         }
         // Convert to camelCase
-        String hookName = name.substring(0, 1).toLowerCase() + name.substring(1)
+        if (name.isEmpty()) return 'event'
+        String hookName = name.length() > 1 ? (name.substring(0, 1).toLowerCase() + name.substring(1)) : name.toLowerCase()
         
         // Handle JavaScript reserved words
         Set<String> reservedWords = ['break', 'case', 'catch', 'continue', 'debugger', 'default', 'delete', 
