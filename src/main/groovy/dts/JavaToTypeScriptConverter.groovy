@@ -110,7 +110,15 @@ class JavaToTypeScriptConverter {
         String content = javaFile.text
         ParsedJavaFile parsed = parseJavaFile(content)
         
-        if (parsed == null || parsed.types.isEmpty()) return
+        if (parsed == null) {
+            logger.warn("Failed to parse ${javaFile.name} - parseJavaFile returned null")
+            return
+        }
+        if (parsed.types.isEmpty()) {
+            logger.warn("No types extracted from ${javaFile.name} - package: ${parsed.packageName}")
+            return
+        }
+        // logger.lifecycle("Successfully parsed ${javaFile.name}: ${parsed.types.size()} type(s) found: ${parsed.types*.name}")
         
         // Determine output path
         String relativePath = baseDir.toPath().relativize(javaFile.toPath()).toString()
