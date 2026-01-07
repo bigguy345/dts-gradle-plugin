@@ -5,6 +5,7 @@ import org.gradle.api.tasks.TaskAction
 import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.InputFiles
 import org.gradle.api.tasks.OutputDirectory
+import org.gradle.api.tasks.Internal
 import org.gradle.api.tasks.Optional
 import org.gradle.api.file.FileCollection
 
@@ -13,19 +14,17 @@ import org.gradle.api.file.FileCollection
  * 
  * Usage in build.gradle:
  * 
- * task generateTypeScriptDefinitions(type: dts.GenerateTypeScriptTask) {
- *     sourceDirectories = [file('src/api/java')]
- *     outputDirectory = file('src/main/resources/assets/customnpcs/api')
+ * tasks.withType(GenerateTypeScriptTask).configureEach {
+ *     sourceDirectories = ['src/api/java']  // Strings are converted to Files
+ *     outputDirectory = 'src/main/resources/${modid}/api'  // String converted to File
  *     apiPackages = ['noppes.npcs.api', 'kamkeel.npcdbc.api']
  * }
  */
 abstract class GenerateTypeScriptTask extends DefaultTask {
     
-    @Input
-    List<File> sourceDirectories = []
-    
-    @OutputDirectory
-    File outputDirectory
+    // Internal representations
+    private List<Object> _sourceDirectoriesInput = []
+    private Object _outputDirectoryInput
     
     @Input
     Set<String> apiPackages = []
@@ -36,6 +35,56 @@ abstract class GenerateTypeScriptTask extends DefaultTask {
     @Input
     List<String> excludePatterns = []
     
+    // Setters accept strings or Files
+    void setSourceDirectories(Object value) {
+        if (value instanceof List) {
+            _sourceDirectoriesInput = value
+        } else {
+            _sourceDirectoriesInput = [value]
+        }
+    }
+    
+    void setOutputDirectory(Object value) {
+        _outputDirectoryInput = value
+    }
+    
+    // Provide task input/output properties that Gradle can validate
+    @InputFiles
+    protected List<File> getSourceDirectories() {
+        return _sourceDirectoriesInput.collect { convertToFile(it) }
+    }
+    
+    @OutputDirectory
+    protected File getOutputDirectory() {
+        return convertToFile(_outputDirectoryInput)
+    }
+    
+    /**
+     * Converts a value (String or File) to a File object.
+     * Supports special tokens like ${modid}.
+     */
+    private File convertToFile(Object value) {
+        if (value instanceof File) {
+            return value
+        }
+        
+        String pathStr = value.toString()
+        
+        // Handle ${modid} token
+        if (pathStr.contains('${modid}')) {
+            String modid = project.archivesBaseName ?: 'mod'
+            pathStr = pathStr.replace('${modid}', modid)
+        }
+        
+        // Resolve relative paths from project directory
+        File file = new File(pathStr)
+        if (!file.isAbsolute()) {
+            file = new File(project.projectDir, pathStr)
+        }
+        
+        return file
+    }
+    
     GenerateTypeScriptTask() {
         group = 'build'
         description = 'Generates TypeScript definition files from Java API sources'
@@ -43,6 +92,9 @@ abstract class GenerateTypeScriptTask extends DefaultTask {
     
     @TaskAction
     void generate() {
+        List<File> sourceDirectories = getSourceDirectories()
+        File outputDirectory = getOutputDirectory()
+        
         logger.lifecycle("=".multiply(60))
         logger.lifecycle("Generating TypeScript definitions...")
         logger.lifecycle("=".multiply(60))
