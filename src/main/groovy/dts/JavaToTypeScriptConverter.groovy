@@ -542,8 +542,10 @@ class JavaToTypeScriptConverter {
         Set<String> typeParamNames = type.parsedTypeParams?.collect { it.name }?.toSet() ?: [] as Set
         
         // JSDoc
-        if (type.jsdoc) {
-            sb.append(convertJsDoc(type.jsdoc, indent))
+        String javaFqn = buildJavaFqn(parsed.packageName, type.name)
+        String typeJsDoc = ensureJavaFqnTag(type.jsdoc, javaFqn, indent)
+        if (typeJsDoc) {
+            sb.append(typeJsDoc)
             sb.append('\n')
         }
         
@@ -581,7 +583,7 @@ class JavaToTypeScriptConverter {
             type.nestedTypes.each { nested ->
                 // Always generate as interface, even if empty
                 // Empty interfaces with extends are important for type hierarchy
-                generateNestedType(sb, nested, type.name, parsed, currentPath, indent + '    ')
+                generateNestedType(sb, nested, type.name, type.name, parsed, currentPath, indent + '    ')
             }
             sb.append("${indent}}\n")
         }
@@ -592,13 +594,16 @@ class JavaToTypeScriptConverter {
      * Generate a nested type (interface/class within a namespace)
      * Recursively handles nested types that themselves have nested types
      */
-    private void generateNestedType(StringBuilder sb, JavaType type, String parentTypeName, ParsedJavaFile parsed, String currentPath, String indent) {
+    private void generateNestedType(StringBuilder sb, JavaType type, String parentTypeName, String parentTypeChain, ParsedJavaFile parsed, String currentPath, String indent) {
         // Build a set of type parameter names for this nested type
         Set<String> typeParamNames = type.parsedTypeParams?.collect { it.name }?.toSet() ?: [] as Set
         
         // JSDoc
-        if (type.jsdoc) {
-            sb.append(convertJsDoc(type.jsdoc, indent))
+        String nestedChain = parentTypeChain ? "${parentTypeChain}.${type.name}" : type.name
+        String javaFqn = buildJavaFqn(parsed.packageName, nestedChain)
+        String nestedJsDoc = ensureJavaFqnTag(type.jsdoc, javaFqn, indent)
+        if (nestedJsDoc) {
+            sb.append(nestedJsDoc)
             sb.append('\n')
         }
         
@@ -632,7 +637,7 @@ class JavaToTypeScriptConverter {
             type.nestedTypes.each { nested ->
                 // Always generate as interface, even if empty
                 // Empty interfaces with extends are important for type hierarchy
-                generateNestedType(sb, nested, type.name, parsed, currentPath, indent + '    ')
+                generateNestedType(sb, nested, type.name, nestedChain, parsed, currentPath, indent + '    ')
             }
             sb.append("${indent}}\n")
         }
@@ -1004,6 +1009,35 @@ class JavaToTypeScriptConverter {
                 return "${indent}${trimmed}"
             }
         }.join('\n')
+    }
+
+    private String ensureJavaFqnTag(String jsdoc, String javaFqn, String indent) {
+        if (javaFqn == null || javaFqn.isEmpty()) {
+            return convertJsDoc(jsdoc, indent)
+        }
+
+        if (jsdoc != null && jsdoc.contains('@javaFqn')) {
+            return convertJsDoc(jsdoc, indent)
+        }
+
+        if (jsdoc == null || jsdoc.trim().isEmpty()) {
+            return "${indent}/**\n${indent} * @javaFqn ${javaFqn}\n${indent} */"
+        }
+
+        String converted = convertJsDoc(jsdoc, indent)
+        int endIndex = converted.lastIndexOf('*/')
+        if (endIndex >= 0) {
+            String insert = "${indent} * @javaFqn ${javaFqn}\n"
+            return converted.substring(0, endIndex) + insert + converted.substring(endIndex)
+        }
+
+        return converted + "\n${indent} * @javaFqn ${javaFqn}"
+    }
+
+    private String buildJavaFqn(String packageName, String typeName) {
+        if (typeName == null || typeName.isEmpty()) return null
+        if (packageName == null || packageName.isEmpty()) return typeName
+        return packageName + '.' + typeName
     }
     
     /**
