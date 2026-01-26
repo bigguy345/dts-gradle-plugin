@@ -334,8 +334,9 @@ class JavaToTypeScriptConverter {
         String topLevelBody = removeNestedTypeBodies(body)
         
         // Match method signatures - handles complex generics
+        // Anchored with (?m)^ to prevent matching inside // comment lines
         // Capture JSDoc in group 1, returnType in group 2, methodName in group 3, params in group 4
-        def methodPattern = ~/(\/\*\*[\s\S]*?\*\/\s*)?(?:@\w+(?:\([^)]*\))?\s*)*(?:public\s+|protected\s+|private\s+)?(?:static\s+)?(?:abstract\s+)?(?:default\s+)?(?:synchronized\s+)?(?:final\s+)?(?:<[^>]+>\s+)?(\w[\w.<>,\[\]\s]*?)\s+(\w+)\s*\(([^)]*)\)\s*(?:throws\s+[\w,\s]+)?[;{]/
+        def methodPattern = ~/(?m)^\s*(\/\*\*[\s\S]*?\*\/\s*)?(?:@\w+(?:\([^)]*\))?\s*)*(?:public\s+|protected\s+|private\s+)?(?:static\s+)?(?:abstract\s+)?(?:default\s+)?(?:synchronized\s+)?(?:final\s+)?(?:<[^>]+>\s+)?(\w[\w.<>,\[\]\s]*?)\s+(\w+)\s*\(([^)]*)\)\s*(?:throws\s+[\w,\s]+)?[;{]/
         
         def matcher = topLevelBody =~ methodPattern
         while (matcher.find()) {
@@ -722,18 +723,13 @@ class JavaToTypeScriptConverter {
             return convertGenericType(javaType, parsed, currentPath, typeParamNames)
         }
         
-        // Handle functional interfaces from java.util.function
-        if (FUNCTIONAL_MAPPINGS.containsKey(javaType)) {
-            return 'Function'  // Simplified - will be expanded in generic handling
-        }
-        
         // Check if it is an API type (needs import)
         String importPath = resolveImportPath(javaType, parsed, currentPath)
         if (importPath != null) {
             return "import('${importPath}').${javaType}"
         }
         
-        // Check if it is a java.* type
+        // Check if it is a java.* type (includes java.util.function.* functional interfaces)
         String fullType = resolveFullType(javaType, parsed)
         if (fullType != null && fullType.startsWith('java.')) {
             return "Java.${fullType}"
@@ -778,39 +774,9 @@ class JavaToTypeScriptConverter {
             case 'Optional':
                 return convertType(genericPart, parsed, currentPath, typeParamNames) + ' | null'
             
-            // Functional interfaces
-            case 'Consumer':
-                return "(arg: ${convertType(genericPart, parsed, currentPath, typeParamNames)}) => void"
-            
-            case 'Supplier':
-                return "() => ${convertType(genericPart, parsed, currentPath, typeParamNames)}"
-            
-            case 'Function':
-                List<String> funcParts = splitGenericParams(genericPart)
-                if (funcParts.size() >= 2) {
-                    return "(arg: ${convertType(funcParts[0], parsed, currentPath, typeParamNames)}) => ${convertType(funcParts[1], parsed, currentPath, typeParamNames)}"
-                }
-                return '(arg: any) => any'
-            
-            case 'Predicate':
-                return "(arg: ${convertType(genericPart, parsed, currentPath, typeParamNames)}) => boolean"
-            
-            case 'BiConsumer':
-                List<String> biParts = splitGenericParams(genericPart)
-                if (biParts.size() >= 2) {
-                    return "(arg1: ${convertType(biParts[0], parsed, currentPath, typeParamNames)}, arg2: ${convertType(biParts[1], parsed, currentPath, typeParamNames)}) => void"
-                }
-                return '(arg1: any, arg2: any) => void'
-            
-            case 'BiFunction':
-                List<String> biFuncParts = splitGenericParams(genericPart)
-                if (biFuncParts.size() >= 3) {
-                    return "(arg1: ${convertType(biFuncParts[0], parsed, currentPath, typeParamNames)}, arg2: ${convertType(biFuncParts[1], parsed, currentPath, typeParamNames)}) => ${convertType(biFuncParts[2], parsed, currentPath, typeParamNames)}"
-                }
-                return '(arg1: any, arg2: any) => any'
-            
             default:
-                // Regular generic type
+                // Regular generic type - preserve as Java FQN with generics
+                // (includes functional interfaces like Consumer<T>, Function<T,R>, etc.)
                 String convertedBase = convertType(baseType, parsed, currentPath, typeParamNames)
                 List<String> convertedParams = splitGenericParams(genericPart).collect { 
                     convertType(it, parsed, currentPath, typeParamNames) 
