@@ -36,6 +36,9 @@ abstract class GenerateTypeScriptTask extends DefaultTask {
     Boolean cleanOutputFirst = false
     
     @Input
+    Boolean mapJavaPrimitivesToJS = false
+    
+    @Input
     List<String> excludePatterns = []
 
     @Internal
@@ -142,7 +145,7 @@ abstract class GenerateTypeScriptTask extends DefaultTask {
         }
         
         // Create converter and process
-        JavaToTypeScriptConverter converter = new JavaToTypeScriptConverter(outDir, apiPackages)
+        JavaToTypeScriptConverter converter = new JavaToTypeScriptConverter(outDir, apiPackages, mapJavaPrimitivesToJS)
         
         List<File> validDirs = srcDirs.findAll { it.exists() }
         if (validDirs.isEmpty()) {

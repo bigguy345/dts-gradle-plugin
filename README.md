@@ -61,6 +61,11 @@ tasks.named("generateTypeScriptDefinitions").configure {
     // Whether to clean old generated files before regenerating
     cleanOutputFirst = true 
 
+    // Whether to map Java primitives (int, float, double, etc.) to TypeScript 'number'
+    // Set to false (default) to preserve Java primitive types in generated .d.ts for better API clarity
+    // Set to true to map all Java primitives to TS equivalents (int -> number, float -> number, etc.)
+    mapJavaPrimitivesToJS = false
+    
     // Optional: copy external patch .d.ts files into assets/<modid>/api/patches
     patchesDirectory = "dts-patches"
 }

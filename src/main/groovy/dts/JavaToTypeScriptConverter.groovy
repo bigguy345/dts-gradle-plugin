@@ -63,10 +63,12 @@ class JavaToTypeScriptConverter {
     private Map<String, List<HookInfo>> hooks = [:]
 
     private Logger logger;
+    private Boolean mapJavaPrimitivesToJS = false
     
-    JavaToTypeScriptConverter(File outputDir, Set<String> apiPackages) {
+    JavaToTypeScriptConverter(File outputDir, Set<String> apiPackages, Boolean mapJavaPrimitivesToJS = false) {
         this.outputDir = outputDir
         this.apiPackages = apiPackages
+        this.mapJavaPrimitivesToJS = mapJavaPrimitivesToJS
     }
     
     /**
@@ -708,7 +710,7 @@ class JavaToTypeScriptConverter {
         }
         
         // Check primitives first
-        if (PRIMITIVE_MAPPINGS.containsKey(javaType)) {
+        if (mapJavaPrimitivesToJS && PRIMITIVE_MAPPINGS.containsKey(javaType)) {
             return PRIMITIVE_MAPPINGS[javaType]
         }
         
