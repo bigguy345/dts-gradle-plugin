@@ -1,9 +1,26 @@
 # dts-gradle-plugin
 
-This repo contains the Gradle plugin for generating TypeScript `.d.ts` files for the CustomNPC-Plus API.
+This repo contains the Gradle plugin for generating TypeScript `.d.ts` files from Java sources.
 
 These files are used for the generation of auto-completion suggestions and type/interface documentation when scripting
 in the Script Editor in-game.
+
+## What It Generates
+
+The `generateTypeScriptDefinitions` task generates `.d.ts` files for the Java sources under `sourceDirectories`, limited
+to the packages listed in `apiPackages`.
+
+In addition to generating method signatures from the API interfaces/classes, the generator can optionally **enrich API
+interfaces with public instance fields that exist on shipped implementation classes**. This is used to support existing
+scripts that access implementation fields directly (for example: 'event.npc', 'event.player').
+
+Enrichment rules (high level):
+- Only `public` instance fields are considered (no `static`).
+- `final` fields become TypeScript `readonly` fields.
+- Enrichment is "best effort":
+  - 0 implementers for a contract interface: skipped.
+  - >1 implementer for a contract interface: skipped (to avoid lying).
+- Output is deterministic (stable ordering) given the same sources.
 
 ### Implementation using JitPack
 
@@ -48,8 +65,11 @@ plugins {
 // TypeScript plugin is applied above in the main plugins block
 
 tasks.named("generateTypeScriptDefinitions").configure {
-    // Source directories containing the Java API code
-    sourceDirectories = ['src/main/java']
+    // Source directories containing the Java contract sources AND (optionally) implementation sources.
+    // If you enable enrichment via implementationPackages, make sure the relevant implementation sources
+    // are included here so they can be scanned.
+    // Example (CustomNPC-Plus layout): contracts under src/api/java, implementations under src/main/java
+    sourceDirectories = ['src/api/java', 'src/main/java']
     
     // Packages in source directories to generate .d.ts files for
     apiPackages = ['noppes.npcs.api'] as Set
@@ -68,6 +88,15 @@ tasks.named("generateTypeScriptDefinitions").configure {
     
     // Optional: copy external patch .d.ts files into assets/<modid>/api/patches
     patchesDirectory = "dts-patches"
+
+    // Optional: enable implementation-backed field enrichment.
+    // These are package prefixes for implementation classes. When provided, the generator scans
+    // sourceDirectories for classes under these packages that implement interfaces under apiPackages,
+    // and injects their public instance fields into the generated contract interface .d.ts.
+    //
+    // IMPORTANT: Avoid including your API package itself (e.g. '...api') here, otherwise you may
+    // scan API helper classes and create unnecessary ambiguity/overhead.
+    implementationPackages = ['noppes.npcs.scripted'] as Set
 }
 
 

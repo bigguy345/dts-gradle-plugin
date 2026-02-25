@@ -43,6 +43,9 @@ abstract class GenerateTypeScriptTask extends DefaultTask {
 
     @Internal
     Object patchesDirectory
+
+    @Input
+    Set<String> implementationPackages = [] as Set
     
     // Provide task input/output properties that Gradle can validate
     @InputFiles
@@ -95,6 +98,7 @@ abstract class GenerateTypeScriptTask extends DefaultTask {
         }
         return f
     }
+
     
     /**
      * Converts a value (String or File) to a File object.
@@ -146,6 +150,19 @@ abstract class GenerateTypeScriptTask extends DefaultTask {
         
         // Create converter and process
         JavaToTypeScriptConverter converter = new JavaToTypeScriptConverter(outDir, apiPackages, mapJavaPrimitivesToJS)
+        
+        Set<String> contractPrefixes = (apiPackages ?: [])
+            .findAll { it != null && it.contains('.api') }
+            as Set<String>
+        if (!contractPrefixes.isEmpty() && implementationPackages != null && !implementationPackages.isEmpty()) {
+            List<File> implScanDirs = srcDirs.findAll { it.exists() }
+            if (!implScanDirs.isEmpty()) {
+                ImplementationFieldEnricher enricher = new ImplementationFieldEnricher(logger, contractPrefixes, implementationPackages)
+                Map<String, List<ImplementationFieldEnricher.EnrichedField>> enrichmentMap = enricher.buildEnrichmentMap(implScanDirs)
+                converter.setEnrichmentData(enrichmentMap)
+                logger.lifecycle("Implementation field enrichment: ${enrichmentMap.size()} interface(s) will receive impl fields")
+            }
+        }
         
         List<File> validDirs = srcDirs.findAll { it.exists() }
         if (validDirs.isEmpty()) {

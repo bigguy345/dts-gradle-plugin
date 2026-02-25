@@ -64,11 +64,22 @@ class JavaToTypeScriptConverter {
 
     private Logger logger;
     private Boolean mapJavaPrimitivesToJS = false
+
+    // Enrichment data: contract FQN → list of fields from impl classes
+    private Map<String, List<ImplementationFieldEnricher.EnrichedField>> enrichmentData = [:]
     
     JavaToTypeScriptConverter(File outputDir, Set<String> apiPackages, Boolean mapJavaPrimitivesToJS = false) {
         this.outputDir = outputDir
         this.apiPackages = apiPackages
         this.mapJavaPrimitivesToJS = mapJavaPrimitivesToJS
+    }
+
+    /**
+     * Set enrichment data mapping contract interface FQNs to implementation fields.
+     * When set, interface generation will include these fields as properties.
+     */
+    void setEnrichmentData(Map<String, List<ImplementationFieldEnricher.EnrichedField>> data) {
+        this.enrichmentData = data ?: [:]
     }
     
     /**
@@ -578,6 +589,16 @@ class JavaToTypeScriptConverter {
             generateField(sb, field, parsed, currentPath, indent + '    ', typeParamNames)
         }
         
+        // Enriched fields from implementation classes (for interfaces)
+        if (type.isInterface && !enrichmentData.isEmpty()) {
+            String contractFqn = buildJavaFqn(parsed.packageName, type.name)
+            List<ImplementationFieldEnricher.EnrichedField> enrichedFields = enrichmentData[contractFqn]
+            if (enrichedFields) {
+                enrichedFields.each { ef ->
+                    generateEnrichedField(sb, ef, parsed, currentPath, indent + '    ', typeParamNames)
+                }
+            }
+        }
         sb.append("${indent}}\n")
         
         // Nested types as namespace
@@ -630,6 +651,16 @@ class JavaToTypeScriptConverter {
         // Methods - compact format, no comments
         type.methods.each { method ->
             generateMethod(sb, method, parsed, currentPath, indent + '    ', typeParamNames)
+        }
+        // Enriched fields from implementation classes (for interfaces)
+        if (type.isInterface && !enrichmentData.isEmpty()) {
+            String contractFqn = buildJavaFqn(parsed.packageName, nestedChain)
+            List<ImplementationFieldEnricher.EnrichedField> enrichedFields = enrichmentData[contractFqn]
+            if (enrichedFields) {
+                enrichedFields.each { ef ->
+                    generateEnrichedField(sb, ef, parsed, currentPath, indent + '    ', typeParamNames)
+                }
+            }
         }
         
         sb.append("${indent}}\n")
@@ -693,6 +724,16 @@ class JavaToTypeScriptConverter {
             sb.append('\n')
         }
         sb.append("${indent}${field.name}: ${convertType(field.type, parsed, currentPath, typeParamNames)};\n")
+    }
+    
+    /**
+     * Generate a TypeScript property from an enriched field (impl class field injected into interface).
+     * Final fields become readonly.
+     */
+    private void generateEnrichedField(StringBuilder sb, ImplementationFieldEnricher.EnrichedField field, ParsedJavaFile parsed, String currentPath, String indent, Set<String> typeParamNames) {
+        String readonlyPrefix = field.isFinal ? 'readonly ' : ''
+        String tsType = convertType(field.type, parsed, currentPath, typeParamNames)
+        sb.append("${indent}${readonlyPrefix}${field.name}: ${tsType};\n")
     }
     
     /**
