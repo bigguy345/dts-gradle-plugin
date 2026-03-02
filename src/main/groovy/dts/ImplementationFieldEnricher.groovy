@@ -228,7 +228,7 @@ class ImplementationFieldEnricher {
         // Remove nested class/interface/enum bodies first
         String topLevelBody = removeNestedTypeBodies(body)
 
-        def fieldPattern = ~/(?m)^\s*(?:@\w+(?:\([^)]*\))?\s*)*public\s+(?!.*\bstatic\b)(final\s+)?(?:transient\s+|volatile\s+)?(\w[\w.<>,\[\]?\s]*?)\s+([^;\r\n]+);/
+        def fieldPattern = ~/(?m)^\s*(?:@\w+(?:\([^)]*\))?\s*)*public\s+(?!.*\bstatic\b)(final\s+)?(?:transient\s+|volatile\s+)?(\w[\w.<>,\[\]?\s]*)\s+([A-Za-z_][A-Za-z0-9_][^;\r\n]*);/
 
         def matcher = topLevelBody =~ fieldPattern
         while (matcher.find()) {

@@ -35,6 +35,12 @@ class JavaToTypeScriptConverter {
         'Character': 'string',
         'Number': 'number',
     ]
+
+    private static final Set<String> JAVA_LANG_SIMPLE_TYPES = [
+        'Object', 'String', 'Boolean', 'Byte', 'Short', 'Integer', 'Long', 'Float', 'Double',
+        'Character', 'Number', 'Void', 'Class', 'CharSequence', 'Throwable', 'Exception',
+        'RuntimeException', 'Error'
+    ] as Set
     
     // Java functional interface mappings
     private static final Map<String, String> FUNCTIONAL_MAPPINGS = [
@@ -841,6 +847,10 @@ class JavaToTypeScriptConverter {
         if (mapJavaPrimitivesToJS && PRIMITIVE_MAPPINGS.containsKey(javaType)) {
             return PRIMITIVE_MAPPINGS[javaType]
         }
+
+        if (!mapJavaPrimitivesToJS && JAVA_LANG_SIMPLE_TYPES.contains(javaType)) {
+            return javaType
+        }
         
         // Handle arrays
         if (javaType.endsWith('[]') && javaType.length() > 2) {
@@ -893,13 +903,35 @@ class JavaToTypeScriptConverter {
             case 'Map':
             case 'HashMap':
             case 'LinkedHashMap':
+            case 'ConcurrentHashMap':
+            case 'TreeMap':
                 List<String> parts = splitGenericParams(genericPart)
-                if (parts.size() >= 2) {
-                    String keyType = convertType(parts[0], parsed, currentPath, typeParamNames)
-                    String valueType = convertType(parts[1], parsed, currentPath, typeParamNames)
-                    return "Record<${keyType}, ${valueType}>"
+                String keyType = parts.size() >= 1 ? convertType(parts[0], parsed, currentPath, typeParamNames) : 'any'
+                String valueType = parts.size() >= 2 ? convertType(parts[1], parsed, currentPath, typeParamNames) : 'any'
+
+                String mapFqn
+                switch (baseType) {
+                    case 'Map':
+                        mapFqn = 'java.util.Map'
+                        break
+                    case 'HashMap':
+                        mapFqn = 'java.util.HashMap'
+                        break
+                    case 'LinkedHashMap':
+                        mapFqn = 'java.util.LinkedHashMap'
+                        break
+                    case 'ConcurrentHashMap':
+                        mapFqn = 'java.util.concurrent.ConcurrentHashMap'
+                        break
+                    case 'TreeMap':
+                        mapFqn = 'java.util.TreeMap'
+                        break
+                    default:
+                        mapFqn = 'java.util.Map'
+                        break
                 }
-                return 'Record<any, any>'
+
+                return "Java.${mapFqn}<${keyType}, ${valueType}>"
             
             case 'Optional':
                 return convertType(genericPart, parsed, currentPath, typeParamNames) + ' | null'
@@ -993,6 +1025,17 @@ class JavaToTypeScriptConverter {
     }
     
     private String resolveFullType(String typeName, ParsedJavaFile parsed) {
+        if (typeName == null || typeName.isEmpty()) return null
+        typeName = typeName.trim()
+
+        if (typeName.contains('.')) {
+            return typeName
+        }
+
+        if (JAVA_LANG_SIMPLE_TYPES.contains(typeName)) {
+            return "java.lang.${typeName}"
+        }
+
         // Check explicit imports
         String explicitImport = parsed.imports.find { it.endsWith(".${typeName}") }
         if (explicitImport) return explicitImport
