@@ -142,6 +142,7 @@ class JavaToTypeScriptConverter {
         
         // Generate TypeScript content
         String tsContent = generateTypeScript(parsed, dtsPath)
+        tsContent = sanitizeJavaLikeMethodArtifacts(tsContent)
         
         // Write file
         outputFile.parentFile.mkdirs()
@@ -173,6 +174,81 @@ class JavaToTypeScriptConverter {
         
         // Collect hooks from event interfaces
         collectHooks(parsed)
+    }
+
+    private String sanitizeJavaLikeMethodArtifacts(String tsContent) {
+        if (tsContent == null || tsContent.isEmpty()) {
+            return tsContent
+        }
+
+        def javaLikeMethodPattern = ~/^\s*[\w.$<>,?\[\] ]+\s+\w+\s*\([^)]*\)\s*;\s*$/
+        List<String> lines = tsContent.readLines()
+        List<String> out = []
+
+        int i = 0
+        while (i < lines.size()) {
+            String line = lines[i]
+            if (line == null) {
+                i++
+                continue
+            }
+
+            String trimmed = line.trim()
+
+            if (trimmed.startsWith('/**')) {
+                List<String> jsdoc = []
+                int k = i
+                while (k < lines.size()) {
+                    String dl = lines[k]
+                    if (dl == null) {
+                        jsdoc << ''
+                        k++
+                        continue
+                    }
+                    jsdoc << dl
+                    if (dl.contains('*/')) {
+                        k++
+                        break
+                    }
+                    k++
+                }
+
+                int j = k
+                while (j < lines.size()) {
+                    String nl = lines[j]
+                    if (nl == null) {
+                        j++
+                        continue
+                    }
+                    if (!nl.trim().isEmpty()) {
+                        break
+                    }
+                    j++
+                }
+
+                if (j < lines.size()) {
+                    String next = lines[j]
+                    if (next != null && (next ==~ javaLikeMethodPattern)) {
+                        i = j + 1
+                        continue
+                    }
+                }
+
+                out.addAll(jsdoc)
+                i = k
+                continue
+            }
+
+            if (line ==~ javaLikeMethodPattern) {
+                i++
+                continue
+            }
+
+            out << line
+            i++
+        }
+
+        return out.join('\n')
     }
     
     /**
@@ -349,7 +425,7 @@ class JavaToTypeScriptConverter {
         // Match method signatures - handles complex generics
         // Anchored with (?m)^ to prevent matching inside // comment lines
         // Capture JSDoc in group 1, returnType in group 2, methodName in group 3, params in group 4
-        def methodPattern = ~/(?m)^\s*(\/\*\*[\s\S]*?\*\/\s*)?(?:@\w+(?:\([^)]*\))?\s*)*(?:public\s+|protected\s+|private\s+)?(?:static\s+)?(?:abstract\s+)?(?:default\s+)?(?:synchronized\s+)?(?:final\s+)?(?:<[^>]+>\s+)?(\w[\w.<>,\[\]\s]*?)\s+(\w+)\s*\(([^)]*)\)\s*(?:throws\s+[\w,\s]+)?[;{]/
+        def methodPattern = ~/(?m)^\s*(\/\*\*[\s\S]*?\*\/\s*)?(?:@\w+(?:\([^)]*\))?\s*)*(?:public\s+|protected\s+|private\s+)?(?:static\s+)?(?:abstract\s+)?(?:default\s+)?(?:synchronized\s+)?(?:final\s+)?(?:<[^>]+>\s+)?([\w?$][\w?$ .<>,\[\]]*?)\s+(\w+)\s*\(([^)]*)\)\s*(?:throws\s+[\w,\s]+)?[;{]/
         
         def matcher = topLevelBody =~ methodPattern
         while (matcher.find()) {
@@ -744,6 +820,17 @@ class JavaToTypeScriptConverter {
         if (javaType == null || javaType.isEmpty()) return 'any'
         
         javaType = javaType.trim()
+
+        if (javaType.startsWith('?')) {
+            String rest = javaType.substring(1).trim()
+            if (rest.startsWith('extends ')) {
+                return convertType(rest.substring('extends '.length()).trim(), parsed, currentPath, typeParamNames)
+            }
+            if (rest.startsWith('super ')) {
+                return convertType(rest.substring('super '.length()).trim(), parsed, currentPath, typeParamNames)
+            }
+            return 'any'
+        }
         
         // Check if it's a type parameter (like T, U, etc.)
         if (typeParamNames.contains(javaType)) {
